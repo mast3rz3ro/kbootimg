@@ -7,7 +7,7 @@ _main()
 
 		_avb_version()
 								{
-										android_major=$(magiskboot verify "$1" 2>&1 | grep "OS_VERSION" | awk '{print $2}' | tr -d '[]')
+										android_major=$($magiskboot verify "$1" 2>&1 | grep "OS_VERSION" | awk '{print $2}' | tr -d '[]')
 									if [ -z "${android_major}" ]; then
 										echo "- Error invalid bootimg: $1"
 										return 1
@@ -44,13 +44,13 @@ _main()
 										rm -rf "$tmp"
 									fi
 										mkdir -p "$tmp/ramdisk"
-										$(cd "$tmp"; magiskboot unpack "$1")
-										$(cd "$tmp/ramdisk"; magiskboot cpio "../ramdisk.cpio" extract)
+										$(cd "$tmp"; $magiskboot unpack "$1")
+										$(cd "$tmp/ramdisk"; $magiskboot cpio "../ramdisk.cpio" extract)
 										echo -ne "- Unpacking completed !\n- You can edit files inside: $tmp\n- To pack bootimg again use:\n   kbootimg -p $target_file\n"
 								}
 		_bootimg_repack()
 								{
-										$(cd "$tmp"; magiskboot repack "$1" "new-boot.img"; mv "new-boot.img" "$output/")
+										$(cd "$tmp"; $magiskboot repack "$1" "new-boot.img"; mv "new-boot.img" "$output/")
 										echo -ne "- Packing completed !\n- Output is located at: $output/new-boot.img\n"
 									if [ "$clean" = "yes" ]; then
 										echo "- Removing tmp directory..."
@@ -61,7 +61,7 @@ _main()
 								{
 									# permission, filename
 									f="${2}"; f="${f/*\/ramdisk\//}"
-									$(cd "$tmp/ramdisk"; magiskboot cpio "../ramdisk.cpio" "add $1 $f $f" || echo "- Failed applying file change: $2")
+									$(cd "$tmp/ramdisk"; $magiskboot cpio "../ramdisk.cpio" "add $1 $f $f" || echo "- Failed applying file change: $2")
 								}
 		_generate_filestamp()
 								{
@@ -97,7 +97,12 @@ _main()
 									done< <(find "$tmp/ramdisk" -type f)
 								}
 
- 
+
+	if command -v magiskboot >/dev/null; then
+		magiskboot=magiskboot
+	elif command -v ~/magiskboot >/dev/null; then
+		magiskboot=~/magiskboot
+	fi
 while getopts u:p:c option
 		do
 	case "${option}"
@@ -118,8 +123,8 @@ parameters:
  -c, clean tmp before unpack & after pack
 
 examples:
- unpack boot.img: kbootimg -u boot.img
- repack boot.img: kbootimg -p boot.img\n"
+ ./kbootimg -u boot.img
+ ./kbootimg -p boot.img\n"
 	echo -ne "$msg"
 	return 1
 fi
