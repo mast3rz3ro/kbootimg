@@ -24,16 +24,18 @@ _main()
 								}
 		_avb_footer()
 								{
+										# guess patching footer isn't required since magiskboot allows to overwrite files inside ramdisk
+										# if you need this then let me know
 										echo "- Patching AVB footer..."
-									if [ $avb -eq 2 ]; then
-										boot_size=$(stat -c%s "$bootimg")
-										avbtool add_hash_footer --image "$bootimg" --partition_size "$boot_size" --partition_name "boot"
+									#if [ $avb -eq 2 ]; then
+										#boot_size=$(stat -c%s "$bootimg")
+										#avbtool add_hash_footer --image "$bootimg" --partition_size "$boot_size" --partition_name "boot"
 
 										#avbtool extract_public_key --key "sign.pem" --output "sign.pub.bin"
 										#openssl genrsa -f4 -out "testkey_rsa4096.pem" 4096
 										#avbtool add_hash_footer --image "$bootimg" --partition_size "$boot_size" --partition_name "boot" --algorithm SHA256_RSA2048 --key "testkey_rsa2048.pem"
-										echo "Patching AVB-2 completed !"
-									fi
+										#echo "Patching AVB-2 completed !"
+									#fi
 								}
 		_bootimg_unpack()
 								{
@@ -44,21 +46,55 @@ _main()
 										mkdir -p "$tmp/ramdisk"
 										$(cd "$tmp"; magiskboot unpack "$1")
 										$(cd "$tmp/ramdisk"; magiskboot cpio "../ramdisk.cpio" extract)
-										echo -ne "- Unpacking completed !\n- You can edit files inside: $tmp\n- To pack bootimg again use:\n   bootimg -p $target_file\n"
+										echo -ne "- Unpacking completed !\n- You can edit files inside: $tmp\n- To pack bootimg again use:\n   kbootimg -p $target_file\n"
 								}
 		_bootimg_repack()
 								{
-									if [ ! -d "$tmp" ]; then
-										echo -ne "- You need first to unpack: $target_file\n- To unpack bootimg use:\n  bootimg -u $target_file\n"
-										return 1
-									fi
-										$(cd "$tmp"; magiskboot cpio ramdisk.cpio "add 644 default.prop ramdisk/default.prop")
 										$(cd "$tmp"; magiskboot repack "$1" "new-boot.img"; mv "new-boot.img" "$output/")
 										echo -ne "- Packing completed !\n- Output is located at: $output/new-boot.img\n"
 									if [ "$clean" = "yes" ]; then
 										echo "- Removing tmp directory..."
 										rm -rf "$tmp"
 									fi
+								}
+			apply_filechange()
+								{
+									# permission, filename
+									f="${2}"; f="${f/*\/ramdisk\//}"
+									$(cd "$tmp/ramdisk"; magiskboot cpio "../ramdisk.cpio" "add $1 $f $f" || echo "- Failed applying file change: $2")
+								}
+		_generate_filestamp()
+								{
+									if [ -s "$tmp/ramdisk_list" ]; then
+										return 0
+									else
+											echo "- Generating files stamp..."
+										while read x; do
+												stamp="$(date +%s -r "$x" 2>&1) $(stat -c%a "$x" 2>&1) $x"
+											if [[ "$stamp" = *"Permission denied"* ]] || [[ "$stamp" = *"No such file or directory"* ]]; then
+												continue
+											fi
+												echo "$stamp" >>"$tmp/ramdisk_list"
+										done< <(find "$tmp/ramdisk" -type f)
+									fi
+								}
+		_compare_filestamp()
+								{
+										echo "- Checking changed files..."
+									while read x; do
+											arr=($(grep -m1 "$x" "$tmp/ramdisk_list"))
+											stamp="$(date +%s -r "$x" 2>&1)"
+										if [[ "$stamp" = *"Permission denied"* ]] || [[ "$stamp" = *"No such file or directory"* ]]; then
+											continue
+										elif [ "${arr[2]}" = "$x" ] && [ "${arr[0]}" = "$stamp" ]; then
+											continue
+										elif [ "${arr[2]}" = "$x" ] && [ "${arr[0]}" != "$stamp" ]; then
+											echo "- Found changed file: $x"
+											apply_filechange "${arr[1]}" "${arr[2]}"
+										elif [ -z "${arr[@]}" ]; then
+											echo "- Found new file (adding not implemented): $x"
+										fi
+									done< <(find "$tmp/ramdisk" -type f)
 								}
 
  
@@ -75,15 +111,15 @@ done
 
 if [ -z "$target_file" ] || [ "$mode" = "help" ]; then
 	msg="\
-usage: bootimg [option] boot.img
+usage: kbootimg [option] boot.img
 parameters:
  -u, unpack bootimg
  -p, pack bootimg
  -c, clean tmp before unpack & after pack
 
 examples:
- unpack boot.img: bootimg -u boot.img
- repack boot.img: bootimg -p boot.img\n"
+ unpack boot.img: kbootimg -u boot.img
+ repack boot.img: kbootimg -p boot.img\n"
 	echo -ne "$msg"
 	return 1
 fi
@@ -94,17 +130,23 @@ if [ -s "$target_file" ]; then
 	output=$(dirname "$bootimg")
 	tmp="./$(basename "$target_file").tmp"
 else
-	echo "- Error can not read: $bootimg"
+	echo "- Error can not read: $target_file"
 	return 1
 fi
 
 if [ "$mode" = "unpack" ]; then
 	_avb_version "$bootimg" && \
-	_bootimg_unpack "$bootimg"
+	_bootimg_unpack "$bootimg" && \
+	_generate_filestamp
 elif [ "$mode" = "pack" ]; then
-	_avb_version "$bootimg"  && \
-	_bootimg_repack "$bootimg" && \
-	_avb_footer "$bootimg"
+	if [ ! -d "$tmp" ]; then
+		echo -ne "- You need first to unpack: $target_file\n- To unpack bootimg use:\n  kbootimg -u $target_file\n"
+		return 1
+	fi
+		_avb_version "$bootimg"  && \
+		_compare_filestamp && \
+		_bootimg_repack "$bootimg" && \
+		_avb_footer "$bootimg"
 fi
 
 
