@@ -1,0 +1,115 @@
+#!/bin/bash
+
+
+
+_main()
+{
+
+		_avb_version()
+								{
+										android_major=$(magiskboot verify "$1" 2>&1 | grep "OS_VERSION" | awk '{print $2}' | tr -d '[]')
+									if [ -z "${android_major}" ]; then
+										echo "- Error invalid bootimg: $1"
+										return 1
+									elif [ ${android_major:0:1} -ge 8 ]; then
+										echo "- Detected AVB version 2.0"
+										avb=2
+									elif [ ${android_major:0:1} -eq 7 ]; then
+										echo "- Detected AVB version 1.0"
+										avb=1
+									else
+										echo "- AVB is not enforced"
+										avb=0
+									fi
+								}
+		_avb_footer()
+								{
+										echo "- Patching AVB footer..."
+									if [ $avb -eq 2 ]; then
+										boot_size=$(stat -c%s "$bootimg")
+										avbtool add_hash_footer --image "$bootimg" --partition_size "$boot_size" --partition_name "boot"
+
+										#avbtool extract_public_key --key "sign.pem" --output "sign.pub.bin"
+										#openssl genrsa -f4 -out "testkey_rsa4096.pem" 4096
+										#avbtool add_hash_footer --image "$bootimg" --partition_size "$boot_size" --partition_name "boot" --algorithm SHA256_RSA2048 --key "testkey_rsa2048.pem"
+										echo "Patching AVB-2 completed !"
+									fi
+								}
+		_bootimg_unpack()
+								{
+									if [ "$clean" = "yes" ] && [ -d "$tmp" ]; then
+										echo "- Removing directory: $tmp"
+										rm -rf "$tmp"
+									fi
+										mkdir -p "$tmp/ramdisk"
+										$(cd "$tmp"; magiskboot unpack "$1")
+										$(cd "$tmp/ramdisk"; magiskboot cpio "../ramdisk.cpio" extract)
+										echo -ne "- Unpacking completed !\n- You can edit files inside: $tmp\n- To pack bootimg again use:\n   bootimg -p $target_file\n"
+								}
+		_bootimg_repack()
+								{
+									if [ ! -d "$tmp" ]; then
+										echo -ne "- You need first to unpack: $target_file\n- To unpack bootimg use:\n  bootimg -u $target_file\n"
+										return 1
+									fi
+										$(cd "$tmp"; magiskboot cpio ramdisk.cpio "add 644 default.prop ramdisk/default.prop")
+										$(cd "$tmp"; magiskboot repack "$1" "new-boot.img"; mv "new-boot.img" "$output/")
+										echo -ne "- Packing completed !\n- Output is located at: $output/new-boot.img\n"
+									if [ "$clean" = "yes" ]; then
+										echo "- Removing tmp directory..."
+										rm -rf "$tmp"
+									fi
+								}
+
+ 
+while getopts u:p:c option
+		do
+	case "${option}"
+		in
+		u) mode="unpack"; target_file="${OPTARG}";;
+		p) mode="pack"; target_file="${OPTARG}";;
+		c) clean="yes";;
+		?) mode="help";;
+	esac
+done
+
+if [ -z "$target_file" ] || [ "$mode" = "help" ]; then
+	msg="\
+usage: bootimg [option] boot.img
+parameters:
+ -u, unpack bootimg
+ -p, pack bootimg
+ -c, clean tmp before unpack & after pack
+
+examples:
+ unpack boot.img: bootimg -u boot.img
+ repack boot.img: bootimg -p boot.img\n"
+	echo -ne "$msg"
+	return 1
+fi
+
+
+if [ -s "$target_file" ]; then
+	bootimg=$(realpath "$target_file")
+	output=$(dirname "$bootimg")
+	tmp="./$(basename "$target_file").tmp"
+else
+	echo "- Error can not read: $bootimg"
+	return 1
+fi
+
+if [ "$mode" = "unpack" ]; then
+	_avb_version "$bootimg" && \
+	_bootimg_unpack "$bootimg"
+elif [ "$mode" = "pack" ]; then
+	_avb_version "$bootimg"  && \
+	_bootimg_repack "$bootimg" && \
+	_avb_footer "$bootimg"
+fi
+
+
+}
+
+
+_main "$@"
+
