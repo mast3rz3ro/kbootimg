@@ -1,5 +1,5 @@
 # kbootimg
-A newer kitchen for editing Android's boot image. kbootimg are powered by magiskboot
+A modern kitchen for editing Android's boot image. kbootimg are powered by magiskboot
 
 # References:
 https://nixfaq.org/2020/06/android-verified-boot.html
