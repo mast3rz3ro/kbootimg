@@ -7,14 +7,14 @@ _main()
 
 		_avb_version()
 								{
-										android_major=$($magiskboot verify "$1" 2>&1 | grep "OS_VERSION" | awk '{print $2}' | tr -d '[]')
+										android_major=$($magiskboot verify "$1" 2>&1 | grep "OS_VERSION" | awk '{print $2}' | tr -d '[]' | awk -F '.' '{print $1}')
 									if [ -z "${android_major}" ]; then
 										echo "- Error invalid bootimg: $1"
 										return 1
-									elif [ ${android_major:0:1} -ge 8 ]; then
+									elif [ ${android_major} -ge 8 ]; then
 										echo "- Detected AVB version 2.0"
 										avb=2
-									elif [ ${android_major:0:1} -eq 7 ]; then
+									elif [ ${android_major} -eq 7 ]; then
 										echo "- Detected AVB version 1.0"
 										avb=1
 									else
